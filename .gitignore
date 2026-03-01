@@ -1,0 +1,15 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+Cargo.lock    # (optional – keep if library, but for binaries it's fine to keep)
+# .env file with secrets
+.env
+# Data and logs you create
+/data/
+/logs/
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
