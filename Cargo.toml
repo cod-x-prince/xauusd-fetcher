@@ -1,6 +1,6 @@
 [package]
 name    = "xauusd-fetcher"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [[bin]]
@@ -16,41 +16,57 @@ panic         = "abort" # No unwinding overhead
 strip         = true    # Strip debug symbols from binary
 
 [dependencies]
-# Async runtime
+# Async runtime — current_thread scheduler = zero cross-thread migration
 tokio             = { version = "1",    features = ["full"] }
 
-# WebSocket (native-tls = OS TLS, no extra install needed)
+# WebSocket — native-tls uses OS SChannel (Windows), no OpenSSL dep
 tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
 tungstenite       = { version = "0.21", features = ["native-tls"] }
-
-# TLS stream access (needed to call .get_ref() for TCP_NODELAY)
 tokio-native-tls  = "0.3"
 
-# Async stream combinators (StreamExt / SinkExt)
+# Async stream combinators
 futures-util      = { version = "0.3", default-features = false, features = ["sink", "std"] }
 
-# Serialisation
+# Serialisation — serde for structs, simd-json for hot-path parsing
 serde             = { version = "1",   features = ["derive"] }
-serde_json        = "1"
+serde_json        = "1"                          # used for subscription msg only
+simd-json         = { version = "0.13", features = ["runtime-detection"] } # hot path — detects SIMD at runtime, scalar fallback if unavailable
+
+# Fast float/int formatting — replaces sprintf in output hot path
+ryu  = "1"
+itoa = "1"
 
 # Error handling
-anyhow            = "1"
+anyhow = "1"
 
-# CLI argument parsing
-clap              = { version = "4",   features = ["derive", "env"] }
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
 
-# Logging / tracing
-tracing           = "0.1"
+# Logging
+tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Time
-chrono            = { version = "0.4", features = ["serde"] }
+# Time — std::time used on hot path; chrono only for ISO formatting
+chrono   = { version = "0.4", features = ["serde"] }
 
-# Exponential backoff (async-aware)
-backoff           = { version = "0.4", features = ["tokio"] }
+# Reconnection backoff
+backoff = { version = "0.4", features = ["tokio"] }
 
-# Lazy static / shared state
-once_cell         = "1"
+# Faster mutex than std (3–5x on Windows)
+parking_lot = "0.12"
 
-# .env file loading
-dotenvy           = "0.15"
+# Thread-to-core pinning — eliminates scheduler migration jitter
+core_affinity = "0.8"
+
+# Lazy globals
+once_cell = "1"
+
+# .env loading
+dotenvy = "0.15"
+
+# ── Windows-only: timer resolution + process priority APIs ────────────────────
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Media",
+    "Win32_System_Threading",
+]}
