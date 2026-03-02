@@ -1,12 +1,17 @@
-# ⚡ XAU/USD Ultra-Low-Latency Data Fetcher
+# ⚡ XAU/USD Ultra-Low-Latency Market Data Fetcher
 
-> A production-grade, sub-millisecond market data feed for **Gold (XAU/USD)** and other instruments, built in **Rust** using async WebSocket streaming.
+> Sub-millisecond **Gold (XAU/USD)** price streaming built in **Rust** — WebSocket, TCP_NODELAY, zero-copy JSON parsing, and exponential-backoff reconnection.
 
 ```
 {"timestamp":"2026-03-02T00:01:23.441Z","symbol":"XAU/USD","bid":2938.42,"ask":2938.42,"spread":0.0}
 {"timestamp":"2026-03-02T00:01:23.887Z","symbol":"XAU/USD","bid":2938.45,"ask":2938.45,"spread":0.0}
 {"timestamp":"2026-03-02T00:01:24.102Z","symbol":"XAU/USD","bid":2938.39,"ask":2938.39,"spread":0.0}
 ```
+
+![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange?style=flat-square&logo=rust)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=flat-square)
+![Version](https://img.shields.io/badge/Version-2.0.0-purple?style=flat-square)
+![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 
 ---
 
@@ -18,7 +23,7 @@
 - [Prerequisites](#-prerequisites)
 - [Installation](#-installation)
 - [Configuration](#-configuration)
-- [Running the Tool](#-running-the-tool)
+- [Running](#-running)
 - [Output Formats](#-output-formats)
 - [Saving Data to File](#-saving-data-to-file)
 - [Supported Providers](#-supported-providers)
@@ -26,62 +31,76 @@
 - [Latency Optimisations](#-latency-optimisations)
 - [Market Hours](#-market-hours)
 - [Troubleshooting](#-troubleshooting)
-- [Next Steps](#-next-steps)
+- [Roadmap](#-roadmap)
 
 ---
 
 ## ✨ Features
 
-| Feature | Details |
-|---|---|
-| 🚀 **Ultra-low latency** | Sub-millisecond processing per tick |
-| 🔌 **WebSocket streaming** | Persistent connection, no polling |
-| 🔄 **Auto-reconnect** | Exponential backoff on disconnect |
-| 📡 **Multi-provider** | Twelve Data + Finnhub supported |
-| 💾 **Dual output** | JSON Lines (NDJSON) or CSV |
-| 🛡️ **TCP_NODELAY** | Nagle algorithm disabled for minimal delay |
-| 📝 **Structured logging** | Tracing with configurable verbosity |
-| ⚙️ **Flexible config** | CLI flags + environment variables + `.env` file |
-| 🏗️ **Release optimised** | LTO + single codegen unit + panic=abort |
+| Feature                            | Details                                                        |
+| ---------------------------------- | -------------------------------------------------------------- |
+| 🚀 **Sub-millisecond processing**  | Timestamp captured before JSON parsing — true arrival latency  |
+| 🔌 **Persistent WebSocket stream** | No polling, no REST overhead                                   |
+| 🔄 **Auto-reconnect**              | Exponential backoff (250ms → configurable ceiling)             |
+| 📡 **Multi-provider**              | Twelve Data and Finnhub supported out of the box               |
+| 🛡️ **TCP_NODELAY**                 | Nagle algorithm disabled at the socket level                   |
+| 💾 **Dual output**                 | JSON Lines (NDJSON) or CSV, flushed once per tick              |
+| 🏗️ **Release-optimised binary**    | LTO + single codegen unit + `panic = abort` + symbol stripping |
+| ⚙️ **Flexible config**             | CLI flags → environment variables → `.env` file                |
+| 📝 **Structured logging**          | `tracing` subscriber with `--verbose` flag or `RUST_LOG`       |
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   xauusd-fetcher                    │
-│                                                     │
-│  main.rs          Bootstrap, CLI, Tracing           │
-│  config.rs        All settings (CLI / ENV / .env)   │
-│  connection.rs    WebSocket lifecycle + hot loop    │
-│  types.rs         Wire types + normalised Tick      │
-│  output.rs        Buffered stdout (JSON / CSV)      │
-└──────────────────────┬──────────────────────────────┘
-                       │  WebSocket (wss://)
-          ┌────────────┴────────────┐
-          │                         │
-   ┌──────▼──────┐           ┌──────▼──────┐
-   │ Twelve Data │           │   Finnhub   │
-   │  Basic 8+   │           │  Free tier  │
-   └─────────────┘           └─────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                    xauusd-fetcher v2                     │
+│                                                          │
+│  main.rs         Bootstrap, CLI parsing, tracing init    │
+│  config.rs       Config struct (clap Parser + env vars)  │
+│  connection.rs   WebSocket lifecycle + hot receive loop  │
+│  types.rs        Wire types (RawTick, Tick, Finnhub…)    │
+│  output.rs       Global BufWriter<Stdout> behind Mutex   │
+└───────────────────────────┬──────────────────────────────┘
+                            │  wss://
+             ┌──────────────┴───────────────┐
+             │                              │
+    ┌────────▼────────┐            ┌────────▼────────┐
+    │   Twelve Data   │            │    Finnhub       │
+    │  (XAU/USD etc.) │            │ (OANDA:XAU_USD)  │
+    └─────────────────┘            └─────────────────┘
 ```
 
-**Data flow per tick:**
+**Per-tick data flow:**
+
 ```
 Network frame arrives
-      │
-      ▼
-Timestamp captured  ← before parsing (true latency measurement)
-      │
-      ▼
-serde_json parse    ← zero-copy borrow from frame buffer
-      │
-      ▼
-Tick normalised     ← bid / ask / spread unified
-      │
-      ▼
-BufWriter stdout    ← batched write + per-tick flush
+        │
+        ▼
+Timestamp captured (Utc::now())     ← before parsing = true latency
+        │
+        ▼
+serde_json::from_str(&str)          ← borrows frame buffer, no allocation
+        │
+        ▼
+Event discriminant check            ← "price" | "heartbeat" | "subscribe-status"
+        │
+        ▼
+Tick::from_raw()                    ← normalise bid / ask / spread
+        │
+        ▼
+BufWriter stdout + flush            ← 1 write(2) syscall per tick
+```
+
+**Reconnect loop:**
+
+```
+connect_and_stream() returns Err  ─┐
+                                   │
+backoff::retry (exponential)       │ 250ms → 500ms → 1s → … → max
+                                   │
+connect_and_stream() again  ◄──────┘  fresh TLS handshake + subscribe
 ```
 
 ---
@@ -90,144 +109,156 @@ BufWriter stdout    ← batched write + per-tick flush
 
 ```
 xauusd-fetcher/
-├── Cargo.toml          # Dependencies & release profile
-├── Cargo.lock          # Locked dependency versions
-├── .env                # Your config (not committed to git)
-├── .env.example        # Template — copy and fill in
-├── README.md           # This file
-├── data/               # Tick data output (auto-created)
-│   └── ticks_YYYY-MM-DD_HHmmss.ndjson
-├── logs/               # Connection logs (auto-created)
-│   └── conn_YYYY-MM-DD_HHmmss.log
+├── Cargo.toml              # Dependencies & release profile
+├── Cargo.lock              # Locked dependency tree
+├── .env                    # Your secrets (git-ignored)
+├── .env.example            # Template — copy and fill in
+├── debug_ws.py             # Python helper to inspect raw WebSocket frames
+├── README.md               # This file
+├── data/                   # Tick output directory (create before piping)
 └── src/
-    ├── main.rs         # Entry point
-    ├── config.rs       # Config struct (clap + env)
-    ├── connection.rs   # WebSocket + TCP_NODELAY + backoff
-    ├── types.rs        # RawTick, Tick, FinnhubMsg structs
-    └── output.rs       # Buffered stdout writer
+    ├── main.rs             # current_thread tokio runtime, entry point
+    ├── config.rs           # Config struct (clap + env)
+    ├── connection.rs       # WebSocket + TCP_NODELAY + backoff hot loop
+    ├── types.rs            # RawTick, Tick, FinnhubMsg, SubscribeMsg structs
+    └── output.rs           # Lazy<Mutex<BufWriter<Stdout>>>
 ```
 
 ---
 
 ## 📦 Prerequisites
 
-| Requirement | Version | Install |
-|---|---|---|
-| **Rust** | stable ≥ 1.75 | `rustup update stable` |
-| **Cargo** | (bundled with Rust) | — |
-| **API Key** | Twelve Data or Finnhub | See below |
+| Requirement               | Version                    | Notes                  |
+| ------------------------- | -------------------------- | ---------------------- |
+| **Rust**                  | stable ≥ 1.75              | `rustup update stable` |
+| **Cargo**                 | bundled with Rust          | —                      |
+| **API Key**               | Twelve Data **or** Finnhub | free tiers supported   |
+| **Python 3** _(optional)_ | any                        | for `debug_ws.py` only |
 
 ### Get a Free API Key
 
 **Option A — Twelve Data** (recommended for XAU/USD)
-1. Sign up at [twelvedata.com](https://twelvedata.com) — free Basic 8 plan
-2. Go to **Dashboard → API Keys** → copy your key
-3. ⚠️ XAU/USD streams only during **forex market hours** (Mon–Fri)
 
-**Option B — Finnhub** (best for 24/7 testing)
-1. Sign up at [finnhub.io](https://finnhub.io) — free forever tier
-2. Go to **Dashboard** → copy your API key
-3. Use symbol `OANDA:XAU_USD` with Finnhub
+1. Sign up at [twelvedata.com](https://twelvedata.com) — free Basic plan
+2. Dashboard → API Keys → copy your key
+3. ⚠️ XAU/USD only streams during **forex market hours** (Mon–Fri)
+
+**Option B — Finnhub** (best for 24/7 development)
+
+1. Sign up at [finnhub.io](https://finnhub.io) — free forever
+2. Dashboard → copy API key
+3. Use symbol `OANDA:XAU_USD`
 
 ---
 
 ## 🔧 Installation
 
 ```bash
-# 1. Clone the repository
+# 1. Clone
 git clone https://github.com/yourname/xauusd-fetcher
 cd xauusd-fetcher
 
-# 2. Copy and edit the config file
+# 2. Configure
 cp .env.example .env
-# Open .env and paste your API key
+# Open .env and paste your real API key
 
-# 3. Build the optimised release binary
+# 3. Build — release is mandatory for all optimisations
 cargo build --release
 ```
 
-Build time: ~30–60 seconds (first build downloads all dependencies).
+> ⚠️ Always build with `--release`. Debug builds skip LTO, don't strip symbols, and run significantly slower.
 
 ---
 
 ## ⚙️ Configuration
 
-All settings can be provided via **`.env` file**, **environment variables**, or **CLI flags** — in that order of precedence.
+Settings resolve in this priority order: **CLI flag → env var → `.env` file → default**.
 
-### `.env` file (recommended)
+### `.env` file
 
 ```bash
-# ── Provider: Twelve Data ──────────────────────────────
+# ── Twelve Data (default) ────────────────────────────────────
 API_KEY=your_twelve_data_api_key_here
 WS_URL=wss://ws.twelvedata.com/v1/quotes/price
 SYMBOL=XAU/USD
-PROVIDER=twelvedata
+OUTPUT_FORMAT=json            # "json" (NDJSON) or "csv"
+BACKOFF_MAX_SECS=60
 
-# ── Provider: Finnhub (uncomment to switch) ────────────
+# ── Finnhub (uncomment to switch) ───────────────────────────
 # API_KEY=your_finnhub_api_key_here
 # WS_URL=wss://ws.finnhub.io
 # SYMBOL=OANDA:XAU_USD
-# PROVIDER=finnhub
 
-# ── General settings ───────────────────────────────────
-BACKOFF_MAX_SECS=60     # Max reconnect wait (seconds)
-OUTPUT_FORMAT=json      # "json" or "csv"
-# RUST_LOG=info         # Uncomment for verbose logs
+# ── Logging ─────────────────────────────────────────────────
+# RUST_LOG=info               # or use --verbose flag at runtime
 ```
 
-### All Available Options
+### Full Option Reference
 
-| Flag | Env Var | Default | Description |
-|---|---|---|---|
-| `--api-key` | `API_KEY` | *(required)* | Provider API key |
-| `--ws-url` | `WS_URL` | Twelve Data WSS | WebSocket endpoint |
-| `--symbol` | `SYMBOL` | `XAU/USD` | Instrument to stream |
-| `--provider` | `PROVIDER` | `twelvedata` | `twelvedata` or `finnhub` |
-| `--output-format` | `OUTPUT_FORMAT` | `json` | `json` or `csv` |
-| `--backoff-max-secs` | `BACKOFF_MAX_SECS` | `60` | Max reconnect backoff |
-| `--verbose` / `-v` | `RUST_LOG=info` | `false` | Show connection logs |
+| CLI Flag             | Env Var            | Default         | Description                  |
+| -------------------- | ------------------ | --------------- | ---------------------------- |
+| `--api-key`          | `API_KEY`          | _(required)_    | Provider API key             |
+| `--ws-url`           | `WS_URL`           | Twelve Data WSS | WebSocket endpoint URL       |
+| `--symbol`           | `SYMBOL`           | `XAU/USD`       | Instrument to subscribe to   |
+| `--output-format`    | `OUTPUT_FORMAT`    | `json`          | `json` (NDJSON) or `csv`     |
+| `--backoff-max-secs` | `BACKOFF_MAX_SECS` | `60`            | Max reconnect wait ceiling   |
+| `--verbose` / `-v`   | `RUST_LOG=info`    | off             | Connection lifecycle logging |
 
 ---
 
-## 🚀 Running the Tool
+## 🚀 Running
 
-### Basic run
+### Standard
+
 ```powershell
 .\target\release\xauusd-fetcher.exe
 ```
 
-### With verbose connection logging
+### With verbose connection logs
+
 ```powershell
 .\target\release\xauusd-fetcher.exe --verbose
 ```
 
-### Override symbol on the fly
+### Override symbol at runtime (no config file edit needed)
+
 ```powershell
 $env:SYMBOL = "BTC/USD"
 .\target\release\xauusd-fetcher.exe --verbose
 ```
 
-### Using cargo (development)
-```powershell
-cargo run --release -- --verbose
-```
+### Full CLI override (no `.env` needed)
 
-### Full CLI override (no .env needed)
 ```powershell
 .\target\release\xauusd-fetcher.exe `
-  --api-key  "your_key"   `
-  --symbol   "XAU/USD"    `
-  --provider "twelvedata" `
-  --output-format json    `
+  --api-key "your_key" `
+  --symbol "XAU/USD" `
+  --output-format json `
+  --backoff-max-secs 30 `
   --verbose
+```
+
+### Linux / macOS
+
+```bash
+./target/release/xauusd-fetcher --verbose
+SYMBOL=BTC/USD ./target/release/xauusd-fetcher
+```
+
+### Inspect raw WebSocket frames (Python debugger)
+
+```powershell
+$env:API_KEY = "your_key"   # set the key
+python debug_ws.py           # edit SYMBOL inside the script to change instrument
 ```
 
 ---
 
 ## 📄 Output Formats
 
-### JSON Lines (NDJSON) — default
-One JSON object per line. Easy to parse, stream, and pipe to other tools.
+### JSON Lines / NDJSON (default)
+
+One compact JSON object per line — easy to pipe, grep, stream, and parse downstream.
 
 ```json
 {"timestamp":"2026-03-02T00:01:23.441Z","symbol":"XAU/USD","bid":2938.42,"ask":2938.42,"spread":0.0}
@@ -235,31 +266,32 @@ One JSON object per line. Easy to parse, stream, and pipe to other tools.
 ```
 
 ### CSV
+
 ```
-2026-03-02T00:01:23.441Z,XAU/USD,2938.42000,2938.42000,0.00000
-2026-03-02T00:01:24.102Z,XAU/USD,2938.39000,2938.39000,0.00000
+2026-03-02T00:01:23.441+00:00,XAU/USD,2938.42000,2938.42000,0.00000
+2026-03-02T00:01:24.102+00:00,XAU/USD,2938.39000,2938.39000,0.00000
 ```
 
-Switch format:
-```powershell
-.\target\release\xauusd-fetcher.exe --output-format csv
-```
+Switch with `--output-format csv`.
 
 ### Field Reference
 
-| Field | Type | Description |
-|---|---|---|
-| `timestamp` | ISO 8601 UTC | Wall-clock time tick was **received** by this machine |
-| `symbol` | string | Instrument (e.g. `XAU/USD`, `BTC/USD`) |
-| `bid` | float | Bid price (or last trade price if bid unavailable) |
-| `ask` | float | Ask price (or last trade price if ask unavailable) |
-| `spread` | float | `ask − bid` (0.0 when only single price available) |
+| Field       | Type         | Description                                                  |
+| ----------- | ------------ | ------------------------------------------------------------ |
+| `timestamp` | ISO 8601 UTC | When **this machine received** the WebSocket frame           |
+| `symbol`    | string       | e.g. `XAU/USD`, `BTC/USD`                                    |
+| `bid`       | float        | Bid price (or single trade price if bid unavailable)         |
+| `ask`       | float        | Ask price (or single trade price if ask unavailable)         |
+| `spread`    | float        | `ask − bid`; `0.0` when only a single price field is present |
+
+> **Note on Twelve Data Basic plan:** the provider sends a single `price` field per tick, not a bid/ask pair. `Tick::from_raw()` normalises this transparently as `bid = ask = price, spread = 0.0`. Premium quote endpoints that send true bid/ask are also handled automatically.
 
 ---
 
 ## 💾 Saving Data to File
 
-### Recommended — timestamped session files
+### Recommended — timestamped session files (PowerShell)
+
 ```powershell
 mkdir -Force data, logs | Out-Null
 $ts = Get-Date -Format "yyyy-MM-dd_HHmmss"
@@ -268,36 +300,44 @@ $ts = Get-Date -Format "yyyy-MM-dd_HHmmss"
   Tee-Object -Append -FilePath "data\ticks_$ts.ndjson"
 ```
 
-This command:
-- ✅ Creates `data/` and `logs/` folders automatically
-- ✅ Streams ticks live to your terminal
-- ✅ Saves every tick to a timestamped `.ndjson` file
-- ✅ Saves connection events to a separate `.log` file
-- ✅ Never overwrites previous sessions
+This command simultaneously:
 
-### Simple append
-```powershell
-.\target\release\xauusd-fetcher.exe >> data\ticks.ndjson
+- ✅ Streams ticks live to your terminal
+- ✅ Appends every tick to a timestamped `.ndjson` file
+- ✅ Saves connection events to a separate `.log` file
+- ✅ Never overwrites a previous session
+
+### Simple append (bash)
+
+```bash
+mkdir -p data logs
+./target/release/xauusd-fetcher 2>logs/conn.log >> data/ticks.ndjson
 ```
 
 ### CSV recording
-```powershell
-.\target\release\xauusd-fetcher.exe --output-format csv >> data\ticks.csv
+
+```bash
+./target/release/xauusd-fetcher --output-format csv >> data/ticks.csv
 ```
 
-### Reading saved data
+### Querying saved data
+
 ```powershell
-# Count total ticks captured
+# Count ticks captured
 (Get-Content data\ticks_*.ndjson).Count
 
 # Show last 10 ticks
 Get-Content data\ticks_*.ndjson | Select-Object -Last 10
 
-# Pretty-print with jq (install: winget install jqlang.jq)
-Get-Content data\ticks_*.ndjson | jq '.'
-
-# Filter ticks where price moved more than $5
+# Filter by price with jq (winget install jqlang.jq)
 Get-Content data\ticks_*.ndjson | jq 'select(.bid > 2940)'
+```
+
+```bash
+# Linux / macOS
+wc -l data/ticks.ndjson
+tail -10 data/ticks.ndjson
+jq 'select(.bid > 2940)' data/ticks.ndjson
 ```
 
 ---
@@ -305,40 +345,42 @@ Get-Content data\ticks_*.ndjson | jq 'select(.bid > 2940)'
 ## 📡 Supported Providers
 
 ### Twelve Data
-| Property | Value |
-|---|---|
+
+| Property      | Value                                     |
+| ------------- | ----------------------------------------- |
 | WebSocket URL | `wss://ws.twelvedata.com/v1/quotes/price` |
-| Symbol format | `XAU/USD`, `BTC/USD`, `EUR/USD` |
-| Free plan | Basic 8 — 1 WS connection, 8 symbols |
-| XAU/USD available | ✅ Yes (market hours only) |
-| Data type | Single `price` field per tick |
-| Pricing | [twelvedata.com/pricing](https://twelvedata.com/pricing) |
+| Symbol format | `XAU/USD`, `BTC/USD`, `EUR/USD`           |
+| Free plan     | Basic — 1 concurrent WebSocket connection |
+| XAU/USD       | ✅ Forex market hours only (Mon–Fri)      |
+| Price format  | Single `price` field per tick             |
 
 ### Finnhub
-| Property | Value |
-|---|---|
-| WebSocket URL | `wss://ws.finnhub.io` |
+
+| Property      | Value                              |
+| ------------- | ---------------------------------- |
+| WebSocket URL | `wss://ws.finnhub.io`              |
 | Symbol format | `OANDA:XAU_USD`, `BINANCE:BTCUSDT` |
-| Free plan | ✅ Completely free |
-| XAU/USD available | ✅ Yes (24/7 via OANDA feed) |
-| Data type | Trade price (no bid/ask spread) |
-| Pricing | [finnhub.io/pricing](https://finnhub.io/pricing) |
+| Free plan     | ✅ Completely free                 |
+| XAU/USD       | ✅ 24/7 via OANDA feed             |
+| Price format  | Trade price (no bid/ask spread)    |
 
 ---
 
 ## 🔤 Supported Symbols
 
 ### Twelve Data
+
 ```
-XAU/USD    Gold vs US Dollar       ← primary target
-XAG/USD    Silver vs US Dollar
-BTC/USD    Bitcoin vs US Dollar    ← 24/7, good for testing
-ETH/USD    Ethereum vs US Dollar
-EUR/USD    Euro vs US Dollar
-GBP/USD    British Pound vs USD
+XAU/USD    Gold / US Dollar          ← primary target
+XAG/USD    Silver / US Dollar
+BTC/USD    Bitcoin / US Dollar       ← 24/7, great for dev/testing
+ETH/USD    Ethereum / US Dollar
+EUR/USD    Euro / US Dollar
+GBP/USD    British Pound / US Dollar
 ```
 
 ### Finnhub
+
 ```
 OANDA:XAU_USD      Gold (24/7)
 OANDA:XAG_USD      Silver
@@ -350,139 +392,131 @@ BINANCE:ETHUSDT    Ethereum (24/7)
 
 ## ⚡ Latency Optimisations
 
-This tool applies multiple layers of latency reduction:
-
 ### Network Layer
-| Technique | Code Location | Effect |
-|---|---|---|
-| **TCP_NODELAY** | `connection.rs` | Disables Nagle algorithm — removes 40–200ms ACK batching |
-| **TLS native** | `Cargo.toml` | Uses OS TLS (SChannel on Windows) — no extra overhead |
-| **Frame size cap** | `connection.rs` | 16KB frames — prevents head-of-line blocking |
+
+| Technique                            | Location                              | Effect                                                         |
+| ------------------------------------ | ------------------------------------- | -------------------------------------------------------------- |
+| **TCP_NODELAY**                      | `connection.rs` → `set_tcp_nodelay()` | Disables Nagle — eliminates 40–200ms ACK batching delay        |
+| **Frame + message size caps**        | `connection.rs` → `WebSocketConfig`   | 16 KB frames / 64 KB messages — prevents head-of-line blocking |
+| **OS-native TLS (SChannel/OpenSSL)** | `Cargo.toml` → `native-tls` feature   | No third-party crypto overhead                                 |
 
 ### Runtime Layer
-| Technique | Code Location | Effect |
-|---|---|---|
-| **`current_thread` runtime** | `main.rs` | No cross-thread work-stealing, zero migration jitter |
-| **Timestamp before parse** | `connection.rs` | Captures true network arrival time |
-| **Zero-copy JSON** | `connection.rs` | Borrows `&str` from frame buffer — no allocation |
-| **`BufWriter` stdout** | `output.rs` | Batches writes, one `write(2)` syscall per tick |
+
+| Technique                                | Location                          | Effect                                                            |
+| ---------------------------------------- | --------------------------------- | ----------------------------------------------------------------- |
+| **`current_thread` tokio runtime**       | `main.rs`                         | No cross-thread work-stealing or task migration jitter            |
+| **Timestamp before parsing**             | `connection.rs` hot loop          | Captures true network arrival time, not post-processing time      |
+| **Zero-copy JSON**                       | `connection.rs` → `handle_text()` | `&str` borrowed from frame buffer — no extra allocation           |
+| **`#[inline(always)]` on `handle_text`** | `connection.rs`                   | Hot path folded directly into receive loop by the compiler        |
+| **Global `Lazy<Mutex<BufWriter>>`**      | `output.rs`                       | Single writer instance — no allocation per tick                   |
+| **Per-tick flush**                       | `output.rs` → `emit()`            | One `write(2)` syscall per tick; downstream sees data immediately |
 
 ### Compiler Layer
-| Technique | `Cargo.toml` Setting | Effect |
-|---|---|---|
-| **LTO** | `lto = true` | Cross-crate inlining |
-| **Single codegen unit** | `codegen-units = 1` | Better inlining across modules |
-| **Full optimisation** | `opt-level = 3` | Maximum speed |
-| **Abort on panic** | `panic = "abort"` | No unwinding overhead |
-| **Strip symbols** | `strip = true` | Smaller binary |
+
+| Setting             | `Cargo.toml`        | Effect                                                  |
+| ------------------- | ------------------- | ------------------------------------------------------- |
+| `opt-level = 3`     | `[profile.release]` | Full speed optimisation                                 |
+| `lto = true`        | `[profile.release]` | Cross-crate function inlining                           |
+| `codegen-units = 1` | `[profile.release]` | Single compilation unit — better whole-program inlining |
+| `panic = "abort"`   | `[profile.release]` | No stack unwinding tables or overhead                   |
+| `strip = true`      | `[profile.release]` | Smaller binary, faster load                             |
 
 ---
 
 ## 🕐 Market Hours
 
-### Gold (XAU/USD) — Forex Market Schedule
+### Gold (XAU/USD) — Forex Schedule
 
 ```
-┌──────────────┬─────────────────┬─────────────────┐
-│   Session    │   UTC           │   IST (India)   │
-├──────────────┼─────────────────┼─────────────────┤
-│ Sydney open  │ Sun 22:00       │ Mon 03:30 AM    │
-│ Tokyo open   │ Mon 00:00       │ Mon 05:30 AM    │
-│ London open  │ Mon 08:00       │ Mon 13:30 PM    │
-│ New York open│ Mon 13:00       │ Mon 18:30 PM    │
-│ Market close │ Fri 22:00       │ Sat 03:30 AM    │
-└──────────────┴─────────────────┴─────────────────┘
-Weekend: CLOSED (Saturday & Sunday) — no ticks will arrive
+┌──────────────┬──────────────┬──────────────────┐
+│   Session    │   UTC        │   IST            │
+├──────────────┼──────────────┼──────────────────┤
+│ Sydney open  │ Sun 22:00    │ Mon 03:30 AM     │
+│ Tokyo open   │ Mon 00:00    │ Mon 05:30 AM     │
+│ London open  │ Mon 08:00    │ Mon 13:30 PM     │
+│ New York open│ Mon 13:00    │ Mon 18:30 PM     │
+│ Market close │ Fri 22:00    │ Sat 03:30 AM     │
+└──────────────┴──────────────┴──────────────────┘
+Weekend: CLOSED — no ticks arrive on Twelve Data
 ```
 
-### Crypto (BTC/USD, ETH/USD)
-```
-✅ Trades 24 hours/day, 7 days/week — perfect for testing!
-```
+> **Dev tip:** Use `BTC/USD` (Twelve Data) or `BINANCE:BTCUSDT` (Finnhub) for 24/7 tick flow during development and testing.
 
 ---
 
 ## 🔧 Troubleshooting
 
-### No ticks appearing (connected but silent)
+### Connected but no ticks appearing
+
 ```
 Cause 1: Market is closed (weekend / holiday)
-Fix:     Test with BTC/USD which runs 24/7
+Fix:     Switch to BTC/USD for 24/7 flow
          $env:SYMBOL = "BTC/USD"; .\target\release\xauusd-fetcher.exe --verbose
 
 Cause 2: Wrong provider/symbol combination
-Fix:     Check PROVIDER and SYMBOL match (see Supported Symbols above)
+Fix:     Twelve Data → "XAU/USD"   |   Finnhub → "OANDA:XAU_USD"
 
-Cause 3: Hidden error frames
-Fix:     Enable debug logging to see all raw frames
-         $env:RUST_LOG = "debug"; .\target\release\xauusd-fetcher.exe --verbose
+Cause 3: Silent error frames from provider
+Fix:     $env:RUST_LOG = "debug"; .\target\release\xauusd-fetcher.exe --verbose
+         Or run python debug_ws.py to see raw frames
 ```
 
 ### Repeated disconnections
+
 ```
-Cause:   Only 1 WebSocket connection allowed on Basic plan
-Fix:     Wait 10 seconds after Ctrl+C before restarting
+Cause:   Basic plan allows only 1 concurrent WebSocket connection
+Fix:     Wait ~10 seconds after Ctrl+C before restarting
          Never run two instances simultaneously
-         Check Twelve Data dashboard for connection count
+         Check Twelve Data dashboard for active connection count
 ```
 
-### os error 32 (file locked) on Windows
+### `os error 32` / locked file (Windows)
+
 ```
-Cause:   Previous rustc process still running / antivirus scanning
 Fix:     Get-Process | Where-Object {$_.Name -match "rustc|cargo"} | Stop-Process -Force
          Remove-Item -Recurse -Force .\target
          cargo build --release
 ```
 
-### API key rejected (401 error)
+### API key rejected (401 / auth error)
+
 ```
-Cause:   Wrong key or placeholder not replaced
-Fix:     Check .env file — ensure API_KEY has your real key (no quotes needed)
-         Verify key at twelvedata.com/account or finnhub.io/dashboard
+Fix:     Open .env — confirm API_KEY is your real key with no surrounding quotes
+         Verify at: twelvedata.com/account  or  finnhub.io/dashboard
 ```
 
-### Build fails with dependency errors
+### Build fails
+
 ```
 Fix:     cargo clean
+         rustup update stable
          cargo build --release
 ```
 
 ---
 
-## 🚀 Next Steps
+## 🗺️ Roadmap
 
-Once you have XAU/USD streaming, here are natural extensions to build:
+### Near-term
 
-### 📊 Analytics (Easy)
-```rust
-// Track price movement statistics
-// Calculate rolling average, std deviation
-// Detect momentum shifts
-```
+- [ ] `simd-json` integration — AVX2/SSE4.2 accelerated JSON parsing
+- [ ] `parking_lot::Mutex` — lower-overhead locking for the output writer
+- [ ] CPU thread pinning via `core_affinity`
+- [ ] Linux performance mode — `chrt -f 99`, `taskset`, `isolcpus`
 
-### 📈 Signal Generation (Medium)
-```rust
-// Moving average crossover (EMA 9 / EMA 21)
-// RSI calculation on tick stream
-// Bollinger Band squeeze detection
-// Volume spike alerts
-```
+### Medium-term
 
-### 🤖 Strategy Simulation (Advanced)
-```rust
-// Paper trading engine with P&L tracking
-// Backtest on saved .ndjson tick files
-// Multi-symbol correlation monitor
-// Order book simulation
-```
+- [ ] Multi-symbol streaming — single connection, multiple subscriptions
+- [ ] Binary tick recorder — FlatBuffers format for compact on-disk storage
+- [ ] TimescaleDB / ClickHouse sink
+- [ ] Redis pub/sub publisher for downstream consumers
 
-### 🏗️ Infrastructure (Advanced)
-```rust
-// Write ticks to TimescaleDB / ClickHouse
-// Publish to Redis pub/sub for downstream consumers
-// gRPC stream to trading strategy microservice
-// Binary tick format (FlatBuffers) for max throughput
-```
+### Advanced
+
+- [ ] Broker API integration — OANDA streaming REST or Interactive Brokers TWS
+- [ ] Paper trading engine with P&L tracking on live stream
+- [ ] gRPC tick server — publish to strategy microservices
+- [ ] Backtester — replay saved `.ndjson` files through strategy logic
 
 ---
 
@@ -494,8 +528,8 @@ MIT — free to use, modify, and distribute.
 
 ## ⚠️ Disclaimer
 
-This tool is for **educational and research purposes only**. It is not financial advice. Always paper-trade and backtest thoroughly before risking real capital. Past performance of any strategy does not guarantee future results.
+For **educational and research purposes only**. Free-tier WebSocket feeds have data quality and reliability limitations versus professional market data vendors. Do not use this as the sole basis for live trading decisions.
 
 ---
 
-*Built with 🦀 Rust | Powered by Twelve Data & Finnhub*
+_Built with 🦀 Rust · Powered by Twelve Data & Finnhub_
