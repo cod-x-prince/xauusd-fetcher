@@ -882,15 +882,15 @@ body::after {
 // ── Tauri IPC ─────────────────────────────────────────────────────────────────
 // In Tauri, `window.__TAURI__` is injected at runtime.
 // In a browser (dev mode), we stub it for testing.
-const isTauri = typeof window.__TAURI__ !== 'undefined';
+const isInTauri = typeof window.__TAURI__ !== 'undefined';
 
 async function tauriInvoke(cmd, args = {}) {
-  if (isTauri) return window.__TAURI__.core.invoke(cmd, args);
+  if (isInTauri) return window.__TAURI__.core.invoke(cmd, args);
   console.log('[invoke]', cmd, args);
 }
 
 function tauriListen(event, cb) {
-  if (isTauri) return window.__TAURI__.event.listen(event, cb);
+  if (isInTauri) return window.__TAURI__.event.listen(event, cb);
   // In browser dev mode, expose a manual trigger on window for testing
   window[`_emit_${event}`] = (payload) => cb({ payload });
   return () => {};
@@ -1202,7 +1202,7 @@ $('btn-disconnect').addEventListener('click', async () => {
 
 // ── Persist settings via Tauri store ─────────────────────────────────────────
 async function saveConfig(cfg) {
-  if (!isTauri) { localStorage.setItem('xauusd-cfg', JSON.stringify(cfg)); return; }
+  if (!isInTauri) { localStorage.setItem('xauusd-cfg', JSON.stringify(cfg)); return; }
   try {
     const store = await window.__TAURI__.store.load('settings.json', { autoSave: true });
     await store.set('config', cfg);
@@ -1212,7 +1212,7 @@ async function saveConfig(cfg) {
 
 async function loadStoredConfig() {
   let cfg;
-  if (!isTauri) {
+  if (!isInTauri) {
     try { cfg = JSON.parse(localStorage.getItem('xauusd-cfg') || 'null'); } catch {}
   } else {
     try {
@@ -1259,3 +1259,5 @@ requestAnimationFrame(resizeCanvas);
 </script>
 </body>
 </html>
+
+

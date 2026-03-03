@@ -6,7 +6,7 @@ mod fetcher;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tokio::sync::{broadcast, Mutex};
 
 use fetcher::run_feed;

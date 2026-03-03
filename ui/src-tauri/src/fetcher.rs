@@ -46,7 +46,7 @@ pub async fn run_feed(
         .with_max_elapsed_time(None)
         .build();
 
-    let _ = retry(backoff, || {
+    let _: Result<(), _> = retry(backoff, || {
         let app    = app.clone();
         let config = config.clone();
         let mut stop = stop_rx.resubscribe();

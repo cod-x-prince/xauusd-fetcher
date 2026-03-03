@@ -23,9 +23,14 @@ chrono            = { version = "0.4", features = ["serde"] }
 anyhow            = "1"
 backoff           = { version = "0.4", features = ["tokio"] }
 
+[package.metadata.bundle]
+identifier = "com.xauusd.fetcher"
+icon = ["icons/icon.ico"]
+
 [profile.release]
 opt-level     = 3
 lto           = true
 codegen-units = 1
 panic         = "abort"
 strip         = true
+

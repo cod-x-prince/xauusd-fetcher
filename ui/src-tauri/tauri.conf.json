@@ -1,11 +1,12 @@
 {
-  "productName": "XAU/USD Live",
+  "productName": "XAUUSD Live",
   "version": "2.0.0",
   "identifier": "com.xauusd.fetcher",
   "build": {
     "frontendDist": "../src"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "XAU/USD Live Feed",
@@ -26,7 +27,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": [],
+    "icon": ["icons/icon.ico"],
     "resources": []
   }
 }
