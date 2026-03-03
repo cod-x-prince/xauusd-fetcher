@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XAU/USD Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+/* ── Reset & Variables ──────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:          #07090d;
+  --bg-panel:    #0d1017;
+  --bg-card:     #111620;
+  --bg-input:    #0a0d13;
+  --border:      #1e2535;
+  --border-hi:   #2a3450;
+
+  --gold:        #d4a843;
+  --gold-dim:    #8a6c28;
+  --gold-glow:   rgba(212, 168, 67, 0.15);
+
+  --up:          #00e676;
+  --up-dim:      rgba(0, 230, 118, 0.12);
+  --down:        #ff4560;
+  --down-dim:    rgba(255, 69, 96, 0.12);
+  --neutral:     #4a6080;
+
+  --text-pri:    #e8edf5;
+  --text-sec:    #7a8fa8;
+  --text-dim:    #3a4d63;
+
+  --font-mono:   'Space Mono', 'Courier New', monospace;
+  --font-ui:     'Inter', sans-serif;
+
+  --radius:      4px;
+  --transition:  120ms ease;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text-pri);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+#app {
+  display: grid;
+  grid-template-rows: 44px 1fr 28px;
+  height: 100vh;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+#header {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  gap: 16px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.logo-icon {
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--gold);
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+
+.header-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+
+#symbol-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-sec);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  border-radius: var(--radius);
+}
+
+.header-spacer { flex: 1; }
+
+#connection-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--neutral);
+  transition: background var(--transition), box-shadow var(--transition);
+  flex-shrink: 0;
+}
+#connection-dot.live {
+  background: var(--up);
+  box-shadow: 0 0 8px var(--up);
+  animation: pulse 2s infinite;
+}
+#connection-dot.error {
+  background: var(--down);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+#connection-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-sec);
+}
+
+#btn-settings {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-sec);
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  transition: border-color var(--transition), color var(--transition);
+}
+#btn-settings:hover {
+  border-color: var(--gold-dim);
+  color: var(--gold);
+}
+
+/* ── Main Content ───────────────────────────────────────────────────────── */
+#main {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  overflow: hidden;
+}
+
+/* ── Left Panel ─────────────────────────────────────────────────────────── */
+#left-panel {
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Price Display ──────────────────────────────────────────────────────── */
+#price-section {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+#price-main {
+  font-family: var(--font-mono);
+  font-size: 42px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-pri);
+  line-height: 1;
+  margin-bottom: 4px;
+  transition: color 80ms ease;
+  position: relative;
+}
+
+#price-main.flash-up {
+  color: var(--up);
+  text-shadow: 0 0 20px rgba(0,230,118,0.4);
+}
+#price-main.flash-down {
+  color: var(--down);
+  text-shadow: 0 0 20px rgba(255,69,96,0.4);
+}
+
+#price-change {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-sec);
+  margin-bottom: 16px;
+}
+
+#price-change .delta {
+  font-weight: 700;
+}
+#price-change .delta.up { color: var(--up); }
+#price-change .delta.down { color: var(--down); }
+
+.bid-ask-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ba-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+
+.ba-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.ba-value {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-pri);
+}
+
+#bid-value  { color: var(--down); }
+#ask-value  { color: var(--up); }
+
+.spread-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.spread-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+}
+
+#spread-value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+/* ── Stats ──────────────────────────────────────────────────────────────── */
+#stats-section {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+
+.stat-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-pri);
+}
+
+.stat-value.accent { color: var(--gold); }
+.stat-value.up     { color: var(--up); }
+.stat-value.down   { color: var(--down); }
+
+/* ── Tick Feed ──────────────────────────────────────────────────────────── */
+#feed-section {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.feed-header {
+  padding: 12px 20px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#tick-count {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+#tick-list {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+#tick-list::-webkit-scrollbar { width: 4px; }
+#tick-list::-webkit-scrollbar-track { background: transparent; }
+#tick-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.tick-row {
+  display: grid;
+  grid-template-columns: 1fr 80px 54px;
+  align-items: center;
+  padding: 5px 20px;
+  border-bottom: 1px solid rgba(30,37,53,0.5);
+  animation: fadeIn 150ms ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.tick-time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.tick-price {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: right;
+}
+.tick-price.up   { color: var(--up); }
+.tick-price.down { color: var(--down); }
+.tick-price.flat { color: var(--text-sec); }
+
+.tick-lat {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  text-align: right;
+}
+.tick-lat.fast { color: var(--up); }
+
+/* ── Right Panel (Chart) ────────────────────────────────────────────────── */
+#right-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#chart-header {
+  padding: 14px 20px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.chart-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.chart-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.chart-btn {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-sec);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.chart-btn.active,
+.chart-btn:hover {
+  border-color: var(--gold-dim);
+  color: var(--gold);
+  background: var(--gold-glow);
+}
+
+#chart-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+#price-chart {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Chart Y-axis labels */
+#chart-labels {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 70px;
+  height: 100%;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 8px 8px 8px 0;
+}
+
+.chart-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  text-align: right;
+}
+
+/* Last price line indicator */
+#last-price-line {
+  position: absolute;
+  left: 0;
+  right: 70px;
+  height: 1px;
+  background: var(--gold);
+  opacity: 0.4;
+  pointer-events: none;
+  transition: top 80ms ease;
+}
+
+/* ── Status Bar ─────────────────────────────────────────────────────────── */
+#statusbar {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 20px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  height: 28px;
+}
+
+.status-item {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.status-item span { color: var(--text-sec); }
+
+#status-time { margin-left: auto; }
+
+/* ── Settings Drawer ────────────────────────────────────────────────────── */
+#settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 9, 13, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+#settings-overlay.open {
+  opacity: 1;
+  pointer-events: all;
+}
+
+#settings-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  transform: translateX(100%);
+  transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+}
+#settings-overlay.open #settings-drawer {
+  transform: translateX(0);
+}
+
+.drawer-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.drawer-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+#btn-close-settings {
+  background: none;
+  border: none;
+  color: var(--text-sec);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  transition: color var(--transition);
+}
+#btn-close-settings:hover { color: var(--text-pri); }
+
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+
+.form-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.form-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-pri);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 9px 12px;
+  outline: none;
+  transition: border-color var(--transition);
+  width: 100%;
+}
+.form-input:focus {
+  border-color: var(--gold-dim);
+  box-shadow: 0 0 0 2px var(--gold-glow);
+}
+.form-input::placeholder { color: var(--text-dim); }
+
+.form-select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-pri);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 9px 12px;
+  outline: none;
+  cursor: pointer;
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%234a6080' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+.form-select:focus { border-color: var(--gold-dim); }
+.form-select option { background: var(--bg-panel); }
+
+.form-hint {
+  font-size: 10px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.form-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+.drawer-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+}
+
+.btn-primary {
+  flex: 1;
+  background: var(--gold);
+  color: #07090d;
+  border: none;
+  border-radius: var(--radius);
+  padding: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+.btn-primary:hover { opacity: 0.85; }
+
+.btn-danger {
+  background: none;
+  border: 1px solid var(--down);
+  color: var(--down);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.btn-danger:hover { background: var(--down-dim); }
+
+/* ── Scanline overlay (optional ambience) ───────────────────────────────── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 200;
+}
+
+/* ── Empty state ────────────────────────────────────────────────────────── */
+#empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+#empty-state.hidden { display: none; }
+.empty-icon { font-size: 28px; opacity: 0.3; margin-bottom: 4px; }
+</style>
+</head>
+
+<body>
+<div id="app">
+
+  <!-- ── Header ──────────────────────────────────────────────────────── -->
+  <header id="header">
+    <div class="logo">
+      <div class="logo-icon">Au</div>
+      XAU/USD LIVE
+    </div>
+    <div class="header-divider"></div>
+    <div id="symbol-badge">XAU/USD</div>
+    <div class="header-spacer"></div>
+    <div id="connection-dot"></div>
+    <div id="connection-label">OFFLINE</div>
+    <div class="header-divider"></div>
+    <button id="btn-settings">⚙ SETTINGS</button>
+  </header>
+
+  <!-- ── Main ────────────────────────────────────────────────────────── -->
+  <div id="main">
+
+    <!-- Left Panel -->
+    <div id="left-panel">
+
+      <!-- Price -->
+      <div id="price-section">
+        <div class="section-label">SPOT PRICE · USD / TROY OZ</div>
+        <div id="price-main">——.——</div>
+        <div id="price-change"><span class="delta" id="delta-value">+0.00</span> <span id="delta-pct">(0.00%)</span> session</div>
+        <div class="bid-ask-row">
+          <div class="ba-card">
+            <div class="ba-label">BID</div>
+            <div class="ba-value" id="bid-value">——.——</div>
+          </div>
+          <div class="ba-card">
+            <div class="ba-label">ASK</div>
+            <div class="ba-value" id="ask-value">——.——</div>
+          </div>
+        </div>
+        <div class="spread-row">
+          <span class="spread-label">SPREAD</span>
+          <span id="spread-value">——</span>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div id="stats-section">
+        <div class="stat-card">
+          <div class="stat-label">SESSION HIGH</div>
+          <div class="stat-value up" id="stat-high">——.——</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">SESSION LOW</div>
+          <div class="stat-value down" id="stat-low">——.——</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">TICKS / MIN</div>
+          <div class="stat-value accent" id="stat-tpm">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">AVG LATENCY</div>
+          <div class="stat-value accent" id="stat-lat">——</div>
+        </div>
+      </div>
+
+      <!-- Tick feed -->
+      <div id="feed-section">
+        <div class="feed-header">
+          <div class="section-label">TICK FEED</div>
+          <div id="tick-count">0 ticks</div>
+        </div>
+        <div id="tick-list"></div>
+      </div>
+
+    </div><!-- /left-panel -->
+
+    <!-- Right Panel (Chart) -->
+    <div id="right-panel">
+      <div id="chart-header">
+        <div class="chart-title">Price History</div>
+        <div class="chart-controls">
+          <button class="chart-btn active" data-window="100">100T</button>
+          <button class="chart-btn" data-window="500">500T</button>
+          <button class="chart-btn" data-window="1000">1KT</button>
+        </div>
+      </div>
+      <div id="chart-wrap">
+        <canvas id="price-chart"></canvas>
+        <div id="chart-labels"></div>
+        <div id="last-price-line"></div>
+        <div id="empty-state">
+          <div class="empty-icon">◈</div>
+          Configure settings and start the feed
+        </div>
+      </div>
+    </div><!-- /right-panel -->
+
+  </div><!-- /main -->
+
+  <!-- Status Bar -->
+  <div id="statusbar">
+    <div class="status-item">FEED <span id="st-provider">—</span></div>
+    <div class="status-item">SYMBOL <span id="st-symbol">—</span></div>
+    <div class="status-item">TOTAL <span id="st-total">0</span> TICKS</div>
+    <div class="status-item" id="status-time">
+      UTC <span id="st-clock">——:——:——</span>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<!-- ── Settings Drawer ────────────────────────────────────────────────── -->
+<div id="settings-overlay">
+  <div id="settings-drawer">
+    <div class="drawer-header">
+      <div class="drawer-title">Feed Configuration</div>
+      <button id="btn-close-settings">×</button>
+    </div>
+
+    <div class="drawer-body">
+
+      <div class="form-group">
+        <label class="form-label" for="input-apikey">API Key</label>
+        <input class="form-input" type="password" id="input-apikey"
+               placeholder="Enter your API key…" autocomplete="off" spellcheck="false">
+        <div class="form-hint">Stored securely in the app — never sent anywhere except the provider WebSocket.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="select-provider">Provider</label>
+        <select class="form-select" id="select-provider">
+          <option value="twelvedata">Twelve Data</option>
+          <option value="finnhub">Finnhub</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="select-symbol">Symbol</label>
+        <select class="form-select" id="select-symbol">
+          <optgroup label="Twelve Data">
+            <option value="XAU/USD">XAU/USD — Gold</option>
+            <option value="XAG/USD">XAG/USD — Silver</option>
+            <option value="BTC/USD">BTC/USD — Bitcoin</option>
+            <option value="ETH/USD">ETH/USD — Ethereum</option>
+            <option value="EUR/USD">EUR/USD</option>
+            <option value="GBP/USD">GBP/USD</option>
+          </optgroup>
+          <optgroup label="Finnhub">
+            <option value="OANDA:XAU_USD">OANDA:XAU_USD — Gold (24/7)</option>
+            <option value="BINANCE:BTCUSDT">BINANCE:BTCUSDT — BTC</option>
+          </optgroup>
+        </select>
+      </div>
+
+      <div class="form-separator"></div>
+
+      <div class="form-group">
+        <label class="form-label" for="input-wsurl">WebSocket URL</label>
+        <input class="form-input" type="text" id="input-wsurl"
+               value="wss://ws.twelvedata.com/v1/quotes/price" spellcheck="false">
+        <div class="form-hint">Auto-set when you change provider. Override manually if needed.</div>
+      </div>
+
+    </div>
+
+    <div class="drawer-footer">
+      <button class="btn-primary" id="btn-connect">▶ CONNECT</button>
+      <button class="btn-danger"  id="btn-disconnect">■ STOP</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Tauri IPC ─────────────────────────────────────────────────────────────────
+// In Tauri, `window.__TAURI__` is injected at runtime.
+// In a browser (dev mode), we stub it for testing.
+const isTauri = typeof window.__TAURI__ !== 'undefined';
+
+async function tauriInvoke(cmd, args = {}) {
+  if (isTauri) return window.__TAURI__.core.invoke(cmd, args);
+  console.log('[invoke]', cmd, args);
+}
+
+function tauriListen(event, cb) {
+  if (isTauri) return window.__TAURI__.event.listen(event, cb);
+  // In browser dev mode, expose a manual trigger on window for testing
+  window[`_emit_${event}`] = (payload) => cb({ payload });
+  return () => {};
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const state = {
+  ticks:       [],          // ring buffer of recent ticks
+  chartWindow: 100,         // how many ticks to show on chart
+  sessionHigh: -Infinity,
+  sessionLow:  Infinity,
+  openPrice:   null,
+  lastPrice:   null,
+  totalTicks:  0,
+  latencies:   [],          // for avg latency calc
+  tickTimes:   [],          // for ticks-per-minute calc
+};
+
+const MAX_TICKS      = 2000;
+const MAX_TICK_ROWS  = 80;
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+
+const elPriceMain  = $('price-main');
+const elBid        = $('bid-value');
+const elAsk        = $('ask-value');
+const elSpread     = $('spread-value');
+const elDelta      = $('delta-value');
+const elDeltaPct   = $('delta-pct');
+const elHigh       = $('stat-high');
+const elLow        = $('stat-low');
+const elTpm        = $('stat-tpm');
+const elLat        = $('stat-lat');
+const elTickList   = $('tick-list');
+const elTickCount  = $('tick-count');
+const elConnDot    = $('connection-dot');
+const elConnLabel  = $('connection-label');
+const elEmptyState = $('empty-state');
+const elSymBadge   = $('symbol-badge');
+const elStProvider = $('st-provider');
+const elStSymbol   = $('st-symbol');
+const elStTotal    = $('st-total');
+const elStClock    = $('st-clock');
+const elLastLine   = $('last-price-line');
+
+// Chart
+const canvas   = $('price-chart');
+const ctx      = canvas.getContext('2d');
+
+// ── Chart ─────────────────────────────────────────────────────────────────────
+function resizeCanvas() {
+  const wrap = $('chart-wrap');
+  canvas.width  = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  drawChart();
+}
+
+function drawChart() {
+  const W = canvas.width;
+  const H = canvas.height;
+  const prices = state.ticks.slice(-state.chartWindow).map(t => t.bid);
+  if (prices.length < 2) return;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const yPad   = 24;
+  const xPad   = 12;
+  const chartW = W - xPad * 2 - 64;  // leave room for y-labels
+  const chartH = H - yPad * 2;
+
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const range = maxP - minP || 1;
+
+  const toX = i  => xPad + (i / (prices.length - 1)) * chartW;
+  const toY = p  => yPad + chartH - ((p - minP) / range) * chartH;
+
+  // Grid lines
+  ctx.strokeStyle = '#1e2535';
+  ctx.lineWidth   = 1;
+  const gridLines = 5;
+  for (let i = 0; i <= gridLines; i++) {
+    const y = yPad + (chartH / gridLines) * i;
+    ctx.beginPath();
+    ctx.moveTo(xPad, y);
+    ctx.lineTo(xPad + chartW, y);
+    ctx.stroke();
+  }
+
+  // Gradient fill under line
+  const gradY0 = toY(maxP);
+  const gradY1 = toY(minP);
+  const grad = ctx.createLinearGradient(0, gradY0, 0, gradY1 + yPad);
+  grad.addColorStop(0,   'rgba(212, 168, 67, 0.18)');
+  grad.addColorStop(0.5, 'rgba(212, 168, 67, 0.06)');
+  grad.addColorStop(1,   'rgba(212, 168, 67, 0)');
+
+  ctx.beginPath();
+  ctx.moveTo(toX(0), toY(prices[0]));
+  for (let i = 1; i < prices.length; i++) ctx.lineTo(toX(i), toY(prices[i]));
+  ctx.lineTo(toX(prices.length - 1), H);
+  ctx.lineTo(toX(0), H);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Price line
+  ctx.beginPath();
+  ctx.moveTo(toX(0), toY(prices[0]));
+  for (let i = 1; i < prices.length; i++) ctx.lineTo(toX(i), toY(prices[i]));
+  ctx.strokeStyle = '#d4a843';
+  ctx.lineWidth   = 1.5;
+  ctx.stroke();
+
+  // Last price dot
+  const lastX = toX(prices.length - 1);
+  const lastY = toY(prices[prices.length - 1]);
+  ctx.beginPath();
+  ctx.arc(lastX, lastY, 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#d4a843';
+  ctx.fill();
+
+  // Y-axis labels
+  const labelEl = $('chart-labels');
+  labelEl.innerHTML = '';
+  for (let i = 0; i <= gridLines; i++) {
+    const p = maxP - (range / gridLines) * i;
+    const d = document.createElement('div');
+    d.className = 'chart-label';
+    d.textContent = p.toFixed(2);
+    labelEl.appendChild(d);
+  }
+
+  // Last price horizontal line
+  const pct = (lastY / H) * 100;
+  elLastLine.style.top = `${pct}%`;
+}
+
+// ── Tick handler ──────────────────────────────────────────────────────────────
+function handleTick(tick) {
+  const price    = tick.bid;
+  const prevPrice = state.lastPrice;
+
+  // Ring buffer
+  state.ticks.push(tick);
+  if (state.ticks.length > MAX_TICKS) state.ticks.shift();
+
+  state.lastPrice = price;
+  state.totalTicks++;
+  state.tickTimes.push(Date.now());
+
+  // Session stats
+  if (state.openPrice === null) state.openPrice = price;
+  if (price > state.sessionHigh) { state.sessionHigh = price; elHigh.textContent = price.toFixed(2); }
+  if (price < state.sessionLow)  { state.sessionLow  = price; elLow.textContent  = price.toFixed(2); }
+
+  // Latency
+  state.latencies.push(tick.latency_us);
+  if (state.latencies.length > 200) state.latencies.shift();
+
+  // Direction
+  const dir = prevPrice === null ? 'flat' : price > prevPrice ? 'up' : price < prevPrice ? 'down' : 'flat';
+
+  // Flash price
+  elPriceMain.textContent = price.toFixed(2);
+  elPriceMain.classList.remove('flash-up', 'flash-down');
+  if (dir !== 'flat') {
+    elPriceMain.classList.add(dir === 'up' ? 'flash-up' : 'flash-down');
+    setTimeout(() => elPriceMain.classList.remove('flash-up', 'flash-down'), 300);
+  }
+
+  // Bid/ask/spread
+  elBid.textContent    = tick.bid.toFixed(2);
+  elAsk.textContent    = tick.ask.toFixed(2);
+  elSpread.textContent = tick.spread.toFixed(4);
+
+  // Delta from open
+  const delta    = price - state.openPrice;
+  const deltaPct = (delta / state.openPrice) * 100;
+  elDelta.textContent   = (delta >= 0 ? '+' : '') + delta.toFixed(2);
+  elDeltaPct.textContent = `(${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(3)}%)`;
+  elDelta.className = 'delta ' + (delta > 0 ? 'up' : delta < 0 ? 'down' : '');
+
+  // Tick row
+  addTickRow(tick, dir);
+
+  // Status bar
+  elStTotal.textContent = state.totalTicks.toLocaleString();
+  elTickCount.textContent = `${state.totalTicks.toLocaleString()} ticks`;
+
+  // Ticks per minute (last 60s)
+  const now = Date.now();
+  state.tickTimes = state.tickTimes.filter(t => now - t < 60000);
+  elTpm.textContent = state.tickTimes.length;
+
+  // Avg latency
+  const avgLat = state.latencies.reduce((a, b) => a + b, 0) / state.latencies.length;
+  elLat.textContent = avgLat < 1000
+    ? `${Math.round(avgLat)}µs`
+    : `${(avgLat / 1000).toFixed(2)}ms`;
+
+  // Chart (throttled via rAF)
+  requestAnimationFrame(drawChart);
+
+  // Hide empty state
+  elEmptyState.classList.add('hidden');
+}
+
+function addTickRow(tick, dir) {
+  const time = new Date(tick.timestamp);
+  const hms  = time.toISOString().slice(11, 19);
+
+  const row = document.createElement('div');
+  row.className = 'tick-row';
+
+  const latMs = tick.latency_us;
+  const latStr = latMs < 1000 ? `${latMs}µs` : `${(latMs/1000).toFixed(1)}ms`;
+  const fastCls = latMs < 500 ? 'fast' : '';
+
+  row.innerHTML = `
+    <div class="tick-time">${hms}</div>
+    <div class="tick-price ${dir}">${tick.bid.toFixed(2)}</div>
+    <div class="tick-lat ${fastCls}">${latStr}</div>
+  `;
+
+  elTickList.insertBefore(row, elTickList.firstChild);
+  const rows = elTickList.querySelectorAll('.tick-row');
+  if (rows.length > MAX_TICK_ROWS) rows[rows.length - 1].remove();
+}
+
+// ── Connection status ─────────────────────────────────────────────────────────
+function setConnectionStatus(connected, message) {
+  elConnDot.className   = connected ? 'live' : '';
+  elConnLabel.textContent = message.toUpperCase();
+}
+
+// ── Settings drawer ───────────────────────────────────────────────────────────
+const overlay   = $('settings-overlay');
+const selProvider = $('select-provider');
+const inpWsUrl    = $('input-wsurl');
+
+const PROVIDER_URLS = {
+  twelvedata: 'wss://ws.twelvedata.com/v1/quotes/price',
+  finnhub:    'wss://ws.finnhub.io',
+};
+
+selProvider.addEventListener('change', () => {
+  inpWsUrl.value = PROVIDER_URLS[selProvider.value] || '';
+});
+
+$('btn-settings').addEventListener('click', () => {
+  overlay.classList.add('open');
+  loadStoredConfig();
+});
+
+$('btn-close-settings').addEventListener('click', () => {
+  overlay.classList.remove('open');
+});
+
+overlay.addEventListener('click', e => {
+  if (e.target === overlay) overlay.classList.remove('open');
+});
+
+$('btn-connect').addEventListener('click', async () => {
+  const apiKey = $('input-apikey').value.trim();
+  const wsUrl  = inpWsUrl.value.trim();
+  const symbol = $('select-symbol').value;
+
+  if (!apiKey) {
+    $('input-apikey').focus();
+    return;
+  }
+
+  // Save to store
+  saveConfig({ apiKey, wsUrl, symbol, provider: selProvider.value });
+
+  // Update header badge
+  elSymBadge.textContent = symbol;
+  elStSymbol.textContent = symbol;
+  elStProvider.textContent = selProvider.value.toUpperCase();
+
+  // Reset session stats
+  state.sessionHigh = -Infinity;
+  state.sessionLow  = Infinity;
+  state.openPrice   = null;
+  state.lastPrice   = null;
+  state.totalTicks  = 0;
+  state.ticks       = [];
+  state.latencies   = [];
+  state.tickTimes   = [];
+  elHigh.textContent = '——.——';
+  elLow.textContent  = '——.——';
+  elTickList.innerHTML = '';
+  elEmptyState.classList.remove('hidden');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  await tauriInvoke('start_feed', {
+    config: { api_key: apiKey, ws_url: wsUrl, symbol }
+  });
+
+  overlay.classList.remove('open');
+});
+
+$('btn-disconnect').addEventListener('click', async () => {
+  await tauriInvoke('stop_feed');
+  overlay.classList.remove('open');
+});
+
+// ── Persist settings via Tauri store ─────────────────────────────────────────
+async function saveConfig(cfg) {
+  if (!isTauri) { localStorage.setItem('xauusd-cfg', JSON.stringify(cfg)); return; }
+  try {
+    const store = await window.__TAURI__.store.load('settings.json', { autoSave: true });
+    await store.set('config', cfg);
+    await store.save();
+  } catch (e) { console.warn('Store save failed', e); }
+}
+
+async function loadStoredConfig() {
+  let cfg;
+  if (!isTauri) {
+    try { cfg = JSON.parse(localStorage.getItem('xauusd-cfg') || 'null'); } catch {}
+  } else {
+    try {
+      const store = await window.__TAURI__.store.load('settings.json', { autoSave: false });
+      cfg = await store.get('config');
+    } catch {}
+  }
+  if (!cfg) return;
+  if (cfg.apiKey)   $('input-apikey').value = cfg.apiKey;
+  if (cfg.wsUrl)    inpWsUrl.value          = cfg.wsUrl;
+  if (cfg.symbol)   $('select-symbol').value = cfg.symbol;
+  if (cfg.provider) selProvider.value        = cfg.provider;
+}
+
+// ── Chart window buttons ──────────────────────────────────────────────────────
+document.querySelectorAll('.chart-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.chart-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.chartWindow = parseInt(btn.dataset.window, 10);
+    drawChart();
+  });
+});
+
+// ── UTC Clock ─────────────────────────────────────────────────────────────────
+function updateClock() {
+  elStClock.textContent = new Date().toISOString().slice(11, 19);
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Canvas resize ─────────────────────────────────────────────────────────────
+const ro = new ResizeObserver(resizeCanvas);
+ro.observe($('chart-wrap'));
+
+// ── Tauri event listeners ─────────────────────────────────────────────────────
+tauriListen('tick', e => handleTick(e.payload));
+tauriListen('connection-status', e => {
+  setConnectionStatus(e.payload.connected, e.payload.message);
+});
+
+// Initial resize
+requestAnimationFrame(resizeCanvas);
+</script>
+</body>
+</html>
