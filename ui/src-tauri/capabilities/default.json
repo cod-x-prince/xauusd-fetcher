@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Default capabilities for XAU/USD Live",
+  "description": "Minimal permissions for XAU/USD Live v4",
   "windows": ["main"],
   "permissions": [
     "core:default",
