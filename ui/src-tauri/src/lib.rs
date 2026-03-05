@@ -1,4 +1,5 @@
 mod aggregator;
+mod historical;
 mod fetcher;
 mod patterns;
 mod recorder;
@@ -106,6 +107,23 @@ fn start_feed(
         "symbol": config.symbol, "timeframe": tf.label()
     }));
 
+    // Pre-fetch history for free-tier symbols in parallel — once per session
+    {
+        let app_h  = app.clone();
+        let key    = config.api_key.clone();
+        let tf_now = tf;
+        tauri::async_runtime::spawn(async move {
+            let syms = ["XAU/USD", "BTC/USD"];
+            for sym in syms {
+                let a = app_h.clone();
+                let k = key.clone();
+                let s = sym.to_string();
+                tauri::async_runtime::spawn(async move {
+                    historical::fetch_and_cache(&a, &k, &s, tf_now).await;
+                });
+            }
+        });
+    }
 
     Ok(())
 }
