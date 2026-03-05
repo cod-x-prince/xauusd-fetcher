@@ -1237,12 +1237,7 @@
         };
       }
       function vis() {
-        // Merge historical + live, deduplicate by open_time, newest live wins
-        const all = [...S.histCandles, ...S.liveCandles];
-        const seen = new Map();
-        all.forEach(c => seen.set(c.open_time, c));
-        const merged = [...seen.values()].sort((a, b) => a.open_time - b.open_time);
-        const closed = merged.slice(-S.chartWindow);
+        const closed = S.candles.slice(-S.chartWindow);
         let live = [];
         if (S.liveC) {
           const last = closed[closed.length - 1];
@@ -1743,15 +1738,15 @@
         }
       }
       function handleCandleClose(c) {
-        S.liveCandles.push(c);
-        if (S.liveCandles.length > MAX_CANDLES) S.liveCandles.shift();
+        S.candles.push(c);
+        if (S.candles.length > MAX_CANDLES) S.candles.shift();
         S.totalCandles++;
         elCdl.textContent = S.totalCandles;
         S.liveC = null;
         redrawStatic();
       }
       function handleCandleHistory(cs) {
-        S.histCandles = cs.filter((c) => c.closed);
+        S.candles = cs.filter((c) => c.closed);
         S.liveC = cs.find((c) => !c.closed) || null;
         redrawStatic();
         drawLive();
@@ -1796,8 +1791,6 @@
 
       function resetSymState() {
         S.candles = [];
-        S.histCandles = [];
-        S.liveCandles = [];
         S.liveC = null;
         S.volProfile = null;
         S.totalTicks = 0;

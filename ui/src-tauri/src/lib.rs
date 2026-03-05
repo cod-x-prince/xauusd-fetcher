@@ -1,5 +1,4 @@
 mod aggregator;
-mod historical;
 mod fetcher;
 mod patterns;
 mod recorder;
@@ -107,15 +106,6 @@ fn start_feed(
         "symbol": config.symbol, "timeframe": tf.label()
     }));
 
-    // Fetch last 100 historical candles so chart is never empty
-    {
-        let app3     = app.clone();
-        let hist_key = config.api_key.clone();
-        let hist_sym = config.symbol.clone();
-        tauri::async_runtime::spawn(async move {
-            historical::fetch_and_emit(&app3, &hist_key, &hist_sym, tf).await;
-        });
-    }
 
     Ok(())
 }
@@ -181,7 +171,6 @@ fn switch_timeframe(
         let hist_key = state.api_key.lock().to_string();
         let hist_sym = state.symbol.lock().clone();
         tauri::async_runtime::spawn(async move {
-            historical::fetch_and_emit(&app2, &hist_key, &hist_sym, tf).await;
         });
     }
     Ok(())
@@ -262,6 +251,7 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error running app")
 }
+
 
 
 
