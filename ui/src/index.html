@@ -1141,6 +1141,8 @@
 
       const S = {
         candles: [],
+        histCandles: [],   // from REST API
+        liveCandles: [],   // from live WebSocket aggregator
         liveC: null,
         volProfile: null,
         ticks: [],
@@ -1235,10 +1237,18 @@
         };
       }
       function vis() {
-        return [
-          ...S.candles.slice(-S.chartWindow),
-          ...(S.liveC ? [S.liveC] : []),
-        ];
+        // Merge historical + live, deduplicate by open_time, newest live wins
+        const all = [...S.histCandles, ...S.liveCandles];
+        const seen = new Map();
+        all.forEach(c => seen.set(c.open_time, c));
+        const merged = [...seen.values()].sort((a, b) => a.open_time - b.open_time);
+        const closed = merged.slice(-S.chartWindow);
+        let live = [];
+        if (S.liveC) {
+          const last = closed[closed.length - 1];
+          if (!last || S.liveC.open_time !== last.open_time) live = [S.liveC];
+        }
+        return [...closed, ...live];
       }
       function prRange(cs) {
         let mn = Infinity,
@@ -1316,7 +1326,27 @@
           }
         }
 
-        // Volume profile (right strip)
+        // HIST/LIVE boundary line — show where historical ends and live begins
+  if (S.histCandles.length > 0 && S.liveCandles.length > 0) {
+    const allVis = [...S.histCandles, ...S.liveCandles].sort((a,b)=>a.open_time-b.open_time).slice(-S.chartWindow);
+    const histEnd = S.histCandles[S.histCandles.length - 1];
+    const boundaryIdx = allVis.findIndex(c => c.open_time === histEnd.open_time);
+    if (boundaryIdx >= 0 && boundaryIdx < allVis.length - 1) {
+      const bx = x0 + (boundaryIdx + 0.5) * (cW / allVis.length) + (cW / allVis.length) / 2;
+      ctxG.strokeStyle = 'rgba(212,168,67,.25)';
+      ctxG.lineWidth = 1;
+      ctxG.setLineDash([2, 4]);
+      ctxG.beginPath(); ctxG.moveTo(bx, y0); ctxG.lineTo(bx, y1); ctxG.stroke();
+      ctxG.setLineDash([]);
+      ctxG.fillStyle = 'rgba(212,168,67,.45)';
+      ctxG.font = '7px Space Mono,monospace';
+      ctxG.textAlign = 'center';
+      ctxG.fillText('HIST', bx - 14, y0 + 10);
+      ctxG.fillText('LIVE', bx + 14, y0 + 10);
+    }
+  }
+
+    // Volume profile (right strip)
         if (S.volProfile && S.volProfile.buckets.length) {
           const vp = S.volProfile,
             vpW = PAD_R - 12;
@@ -1459,6 +1489,7 @@
       // LAYER 3 — live forming candle
       function drawLive() {
         ctxL.clearRect(0, 0, cvL.width, cvL.height);
+        if (S.chartMode === 'line') { return; }
         const cs = vis();
         if (!S.liveC || cs.length < 1) return;
         const { x0, x1, y0, W: cW, H: cH } = ca();
@@ -1712,15 +1743,15 @@
         }
       }
       function handleCandleClose(c) {
-        S.candles.push(c);
-        if (S.candles.length > MAX_CANDLES) S.candles.shift();
+        S.liveCandles.push(c);
+        if (S.liveCandles.length > MAX_CANDLES) S.liveCandles.shift();
         S.totalCandles++;
         elCdl.textContent = S.totalCandles;
         S.liveC = null;
         redrawStatic();
       }
       function handleCandleHistory(cs) {
-        S.candles = cs.filter((c) => c.closed);
+        S.histCandles = cs.filter((c) => c.closed);
         S.liveC = cs.find((c) => !c.closed) || null;
         redrawStatic();
         drawLive();
@@ -1765,6 +1796,8 @@
 
       function resetSymState() {
         S.candles = [];
+        S.histCandles = [];
+        S.liveCandles = [];
         S.liveC = null;
         S.volProfile = null;
         S.totalTicks = 0;

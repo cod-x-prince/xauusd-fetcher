@@ -12,6 +12,7 @@ const FLUSH_MS:        u64   = 1_000;
 const TICK_BUF_BYTES:  usize = 65_536;
 const CANDLE_BUF_BYTES: usize = 16_384;
 
+#[allow(dead_code)]
 pub enum RecorderMsg {
     Tick(Tick),
     Candle(Candle),
@@ -144,6 +145,9 @@ trait TapMkdir { fn tap_mkdir(self) -> Self; }
 impl TapMkdir for PathBuf {
     fn tap_mkdir(self) -> Self { let _ = fs::create_dir_all(&self); self }
 }
+
+
+
 
 
 

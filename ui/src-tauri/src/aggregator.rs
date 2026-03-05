@@ -137,8 +137,12 @@ pub fn spawn(app: AppHandle, mut stop_rx: broadcast::Receiver<()>) -> Aggregator
 
                 Some(new_tf) = tf_rx.recv() => {
                     active_tf = new_tf;
+                    // Only emit candle-history if we have live-aggregated candles
+                    // Otherwise historical::fetch_and_emit handles it
                     if let Some(buf) = buffers.get(&active_tf) {
-                        let _ = app.emit("candle-history", buf.all_candles(500));
+                        if !buf.candles.is_empty() {
+                            let _ = app.emit("candle-history", buf.all_candles(500));
+                        }
                     }
                 }
 
@@ -147,7 +151,8 @@ pub fn spawn(app: AppHandle, mut stop_rx: broadcast::Receiver<()>) -> Aggregator
                         buf.candles.clear();
                         buf.live = None;
                     }
-                    let _ = app.emit("candle-history", Vec::<Candle>::new());
+                    // Do not emit empty candle-history here —
+                    // historical::fetch_and_emit will populate the chart
                 }
 
                 Some(tick) = tick_rx.recv() => {
@@ -180,3 +185,7 @@ pub fn spawn(app: AppHandle, mut stop_rx: broadcast::Receiver<()>) -> Aggregator
 
     AggregatorHandle { tick_tx, symbol_tx, tf_tx }
 }
+
+
+
+

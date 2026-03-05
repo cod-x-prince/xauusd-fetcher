@@ -28,6 +28,7 @@ backoff      = { version = "0.4", features = ["tokio"] }
 parking_lot  = "0.12"
 zeroize      = "1"
 dirs         = "5"
+reqwest      = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [package.metadata.bundle]
 identifier = "com.xauusd.fetcher"
@@ -39,4 +40,5 @@ lto           = true
 codegen-units = 1
 panic         = "abort"
 strip         = true
+
 
