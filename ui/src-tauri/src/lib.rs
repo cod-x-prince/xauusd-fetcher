@@ -156,7 +156,6 @@ fn switch_symbol(
 
 #[tauri::command]
 fn switch_timeframe(
-    app:       AppHandle,
     state:     tauri::State<'_, AppState>,
     timeframe: String,
 ) -> Result<(), String> {
@@ -165,13 +164,6 @@ fn switch_timeframe(
     *state.timeframe.lock() = tf;
     if let Some(a) = state.agg_handle.lock().as_ref() {
         let _ = a.tf_tx.try_send(tf);
-    }
-    {
-        let app2     = app.clone();
-        let hist_key = state.api_key.lock().to_string();
-        let hist_sym = state.symbol.lock().clone();
-        tauri::async_runtime::spawn(async move {
-        });
     }
     Ok(())
 }
