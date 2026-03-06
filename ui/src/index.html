@@ -895,13 +895,12 @@
         </div>
         <div class="hd"></div>
         <div id="tf-bar">
-          <button class="tf-btn" data-tf="S5">5S</button>
-          <button class="tf-btn" data-tf="S15">15S</button>
           <button class="tf-btn active" data-tf="M1">1M</button>
           <button class="tf-btn" data-tf="M5">5M</button>
           <button class="tf-btn" data-tf="M15">15M</button>
-          <button class="tf-btn" data-tf="M30">30M</button>
+          <button class="tf-btn" data-tf="M45">45M</button>
           <button class="tf-btn" data-tf="H1">1H</button>
+          <button class="tf-btn" data-tf="H4">4H</button>
         </div>
         <div class="hd"></div>
         <div id="pat-badge"></div>
@@ -1141,8 +1140,6 @@
 
       const S = {
         candles: [],
-        histCandles: [],   // from REST API
-        liveCandles: [],   // from live WebSocket aggregator
         liveC: null,
         volProfile: null,
         ticks: [],
@@ -1163,6 +1160,47 @@
       const MAX_TICKS = 2000,
         MAX_ROWS = 100,
         MAX_CANDLES = 1000;
+      const histCache = new Map();
+
+      // Resample 1min candles into target timeframe
+      function resample(candles1m, tf) {
+        if (!candles1m || candles1m.length === 0) return [];
+        // M1 — return as-is
+        if (tf === "M1") return [...candles1m];
+        const tfMs = {
+          M1: 60000,
+          M5: 300000,
+          M15: 900000,
+          M45: 2700000,
+          H1: 3600000,
+          H4: 14400000,
+        };
+        const bucketMs = tfMs[tf] || 60000;
+        const buckets = new Map();
+        candles1m.forEach((c) => {
+          const bucket = Math.floor(c.open_time / bucketMs) * bucketMs;
+          if (!buckets.has(bucket)) {
+            buckets.set(bucket, {
+              open_time: bucket,
+              close_time: bucket + bucketMs - 1,
+              open: c.open,
+              high: c.high,
+              low: c.low,
+              close: c.close,
+              tick_vol: c.tick_vol,
+              timeframe: tf,
+              closed: true,
+            });
+          } else {
+            const b = buckets.get(bucket);
+            if (c.high > b.high) b.high = c.high;
+            if (c.low < b.low) b.low = c.low;
+            b.close = c.close;
+            b.tick_vol += c.tick_vol;
+          }
+        });
+        return [...buckets.values()].sort((a, b) => a.open_time - b.open_time);
+      }
 
       const $ = (id) => document.getElementById(id);
       const elPrice = $("price-big"),
@@ -1236,13 +1274,41 @@
           fullH: H,
         };
       }
+      function effectiveWindow() {
+        // Use actual candle count capped at chartWindow — prevents huge sparse candles
+        const count = S.candles.length + (S.liveC ? 1 : 0);
+        return Math.max(10, Math.min(S.chartWindow, count || S.chartWindow));
+      }
       function vis() {
-        const closed = S.candles.slice(-S.chartWindow);
-        let live = [];
-        if (S.liveC) {
-          const last = closed[closed.length - 1];
-          if (!last || S.liveC.open_time !== last.open_time) live = [S.liveC];
+        const tfMs = {
+          M1: 60000,
+          M5: 300000,
+          M15: 900000,
+          M45: 2700000,
+          H1: 3600000,
+          H4: 14400000,
+        };
+        const bucket = tfMs[S.activeTf] || 60000;
+        const floor = (ts) => Math.floor(Number(ts) / bucket) * bucket;
+
+        let closed = S.candles.slice(-S.chartWindow);
+
+        // Remove stale history too far from live candle
+        if (S.liveC && closed.length > 0) {
+          const liveTs = Number(S.liveC.open_time);
+          const maxAge = S.chartWindow * bucket;
+          closed = closed.filter((c) => liveTs - Number(c.open_time) <= maxAge);
         }
+
+        // Remove any closed candle that shares a bucket with the live candle
+        // This is the definitive fix for the "two candles same slot" bug
+        if (S.liveC) {
+          const liveBucket = floor(S.liveC.open_time);
+          closed = closed.filter((c) => floor(c.open_time) !== liveBucket);
+        }
+
+        // Add live candle
+        const live = S.liveC ? [S.liveC] : [];
         return [...closed, ...live];
       }
       function prRange(cs) {
@@ -1321,27 +1387,7 @@
           }
         }
 
-        // HIST/LIVE boundary line — show where historical ends and live begins
-  if (S.histCandles.length > 0 && S.liveCandles.length > 0) {
-    const allVis = [...S.histCandles, ...S.liveCandles].sort((a,b)=>a.open_time-b.open_time).slice(-S.chartWindow);
-    const histEnd = S.histCandles[S.histCandles.length - 1];
-    const boundaryIdx = allVis.findIndex(c => c.open_time === histEnd.open_time);
-    if (boundaryIdx >= 0 && boundaryIdx < allVis.length - 1) {
-      const bx = x0 + (boundaryIdx + 0.5) * (cW / allVis.length) + (cW / allVis.length) / 2;
-      ctxG.strokeStyle = 'rgba(212,168,67,.25)';
-      ctxG.lineWidth = 1;
-      ctxG.setLineDash([2, 4]);
-      ctxG.beginPath(); ctxG.moveTo(bx, y0); ctxG.lineTo(bx, y1); ctxG.stroke();
-      ctxG.setLineDash([]);
-      ctxG.fillStyle = 'rgba(212,168,67,.45)';
-      ctxG.font = '7px Space Mono,monospace';
-      ctxG.textAlign = 'center';
-      ctxG.fillText('HIST', bx - 14, y0 + 10);
-      ctxG.fillText('LIVE', bx + 14, y0 + 10);
-    }
-  }
-
-    // Volume profile (right strip)
+        // Volume profile (right strip)
         if (S.volProfile && S.volProfile.buckets.length) {
           const vp = S.volProfile,
             vpW = PAD_R - 12;
@@ -1423,7 +1469,7 @@
         const { mn, mx } = prRange(cs);
         const n = cs.length,
           step = cW / n;
-        const cw = Math.max(2, Math.min(22, step * 0.72));
+        const cw = Math.max(2, Math.min(16, step * 0.65));
         const maxV = Math.max(...cs.map((c) => c.tick_vol), 1);
 
         cs.forEach((c, i) => {
@@ -1484,14 +1530,14 @@
       // LAYER 3 — live forming candle
       function drawLive() {
         ctxL.clearRect(0, 0, cvL.width, cvL.height);
-        if (S.chartMode === 'line') { return; }
+        if (S.chartMode === "line") return;
         const cs = vis();
         if (!S.liveC || cs.length < 1) return;
         const { x0, x1, y0, W: cW, H: cH } = ca();
         const { mn, mx } = prRange(cs);
         const n = cs.length,
           step = cW / n;
-        const cw = Math.max(2, Math.min(22, step * 0.72));
+        const cw = Math.max(2, Math.min(16, step * 0.65));
         const cx = x0 + (n - 1) * step + step / 2;
         const c = S.liveC,
           bull = c.close >= c.open;
@@ -1738,15 +1784,38 @@
         }
       }
       function handleCandleClose(c) {
-        S.candles.push(c);
-        if (S.candles.length > MAX_CANDLES) S.candles.shift();
+        const tfMs = {
+          M1: 60000,
+          M5: 300000,
+          M15: 900000,
+          M45: 2700000,
+          H1: 3600000,
+          H4: 14400000,
+        };
+        const bucket = tfMs[S.activeTf] || 60000;
+        const floor = (ts) => Math.floor(Number(ts) / bucket) * bucket;
+        const newBucket = floor(c.open_time);
+        // Replace any existing candle in the same bucket instead of duplicating
+        const idx = S.candles.findIndex(
+          (x) => floor(x.open_time) === newBucket,
+        );
+        if (idx >= 0) {
+          S.candles[idx] = c;
+        } else {
+          S.candles.push(c);
+          if (S.candles.length > MAX_CANDLES) S.candles.shift();
+        }
         S.totalCandles++;
         elCdl.textContent = S.totalCandles;
         S.liveC = null;
         redrawStatic();
       }
       function handleCandleHistory(cs) {
-        S.candles = cs.filter((c) => c.closed);
+        const closed = cs.filter((c) => c.closed);
+        // Only replace if incoming has MORE candles than current (aggregator sends 1-2, history sends 99)
+        if (closed.length > S.candles.length) {
+          S.candles = closed;
+        }
         S.liveC = cs.find((c) => !c.closed) || null;
         redrawStatic();
         drawLive();
@@ -1824,6 +1893,10 @@
           .forEach((b) => b.classList.toggle("active", b.dataset.sym === sym));
         $("sb-sym").textContent = sym;
         resetSymState();
+        if (histCache.has(sym)) {
+          S.candles = resample(histCache.get(sym), S.activeTf);
+          redrawStatic();
+        }
         invoke("switch_symbol", { symbol: sym }).catch(console.error);
       }
       function switchTf(tf) {
@@ -1836,6 +1909,10 @@
           .forEach((b) => b.classList.toggle("active", b.dataset.tf === tf));
         $("sb-tf").textContent = tf;
         $("tf-lbl").textContent = "· " + tf;
+        // Resample cached 1min candles to target TF
+        if (histCache.has(S.activeSym)) {
+          S.candles = resample(histCache.get(S.activeSym), tf);
+        }
         redrawStatic();
         drawLive();
         invoke("switch_timeframe", { timeframe: tf }).catch(console.error);
@@ -1935,6 +2012,16 @@
             .forEach((x) => x.classList.toggle("active", x === b));
           redrawStatic();
         };
+      });
+
+      // hist-cache — pre-fetched candles arrive here, stored in Map
+      listen("hist-cache", (e) => {
+        const { symbol, candles } = e.payload;
+        histCache.set(symbol, candles); // raw 1min data
+        if (symbol === S.activeSym && S.candles.length === 0) {
+          S.candles = resample(candles, S.activeTf);
+          redrawStatic();
+        }
       });
 
       // Clock
