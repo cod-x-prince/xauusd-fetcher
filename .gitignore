@@ -25,3 +25,7 @@ cli/logs/
 *.swp
 *.swo
 *~
+
+*.py
+.secrets.baseline
+*.bak
